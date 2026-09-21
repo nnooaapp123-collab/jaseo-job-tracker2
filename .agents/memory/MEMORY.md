@@ -1,0 +1,1 @@
+- [Drizzle wraps pg errors](drizzle-pg-errors.md) — to detect unique-violation (23505) etc., walk the err.cause chain, not top-level err.code (especially inside db.transaction).

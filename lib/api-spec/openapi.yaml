@@ -1,0 +1,1911 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: API specification for Jaseo Job Tracker
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: auth
+    description: Authentication
+  - name: jobs
+    description: Job assignment operations
+  - name: writers
+    description: Writer operations
+  - name: editors
+    description: Editor operations
+  - name: stats
+    description: Statistics and summary
+  - name: pm-auth
+    description: Proposal Marketplace authentication
+  - name: pm-proposals
+    description: Proposal listing and management
+  - name: pm-categories
+    description: Proposal categories
+  - name: pm-transactions
+    description: Proposal transactions and payments
+  - name: pm-payouts
+    description: Seller payout requests
+  - name: pm-admin
+    description: Admin operations for proposal marketplace
+  - name: storage
+    description: Object storage file uploads
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginBody"
+      responses:
+        "200":
+          description: Logged in user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Invalid credentials
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current logged-in user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Not authenticated
+
+  /auth/password:
+    patch:
+      operationId: changePassword
+      tags: [auth]
+      summary: Change own password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordBody"
+      responses:
+        "200":
+          description: Password changed
+        "400":
+          description: Incorrect current password
+
+  /jobs:
+    get:
+      operationId: listJobs
+      tags: [jobs]
+      summary: List all jobs
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: writerId
+          in: query
+          schema:
+            type: ["integer", "null"]
+      responses:
+        "200":
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Job"
+    post:
+      operationId: createJob
+      tags: [jobs]
+      summary: Create a new job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateJobBody"
+      responses:
+        "201":
+          description: Created job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+
+  /jobs/{id}:
+    get:
+      operationId: getJob
+      tags: [jobs]
+      summary: Get a job by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateJob
+      tags: [jobs]
+      summary: Update a job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateJobBody"
+      responses:
+        "200":
+          description: Updated job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+    delete:
+      operationId: deleteJob
+      tags: [jobs]
+      summary: Delete a job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+
+  /writers:
+    get:
+      operationId: listWriters
+      tags: [writers]
+      summary: List all writers
+      responses:
+        "200":
+          description: List of writers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Writer"
+    post:
+      operationId: createWriter
+      tags: [writers]
+      summary: Create a writer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWriterBody"
+      responses:
+        "201":
+          description: Created writer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Writer"
+
+  /writers/{id}:
+    patch:
+      operationId: updateWriter
+      tags: [writers]
+      summary: Update a writer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWriterBody"
+      responses:
+        "200":
+          description: Updated writer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Writer"
+
+  /editors:
+    get:
+      operationId: listEditors
+      tags: [editors]
+      summary: List all editors
+      responses:
+        "200":
+          description: List of editors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Editor"
+    post:
+      operationId: createEditor
+      tags: [editors]
+      summary: Create an editor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEditorBody"
+      responses:
+        "201":
+          description: Created editor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Editor"
+
+  /editors/{id}:
+    delete:
+      operationId: deleteEditor
+      tags: [editors]
+      summary: Soft-delete an editor (data histori tetap)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Editor dihapus
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required:
+                  - success
+
+  /salary/monthly:
+    get:
+      operationId: getMonthlySalary
+      tags: [stats]
+      summary: Kalkulasi data gaji bulanan penulis/editor
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: targetUserId
+          in: query
+          schema:
+            type: ["integer", "null"]
+      responses:
+        "200":
+          description: Monthly salary data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonthlySalaryResult"
+        "403":
+          description: Forbidden
+
+  /salary/cs-monthly:
+    get:
+      operationId: getCsSalary
+      tags: [stats]
+      summary: Kalkulasi pendapatan CS dari seluruh tim
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: CS salary result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CSSalaryResult"
+        "403":
+          description: Forbidden
+
+  /salary/additional:
+    get:
+      operationId: listAdditionalIncome
+      tags: [stats]
+      summary: List pendapatan lainnya per user per bulan
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of additional income entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdditionalIncomeEntry"
+    post:
+      operationId: addAdditionalIncome
+      tags: [stats]
+      summary: Tambah pendapatan lainnya (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddAdditionalIncomeBody"
+      responses:
+        "201":
+          description: Entry ditambahkan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdditionalIncomeEntry"
+
+  /salary/additional/{id}:
+    delete:
+      operationId: deleteAdditionalIncome
+      tags: [stats]
+      summary: Hapus pendapatan lainnya (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Berhasil dihapus
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required:
+                  - success
+
+  /jobs/batch:
+    post:
+      operationId: batchCreateJobs
+      tags: [jobs]
+      summary: Batch import jobs dari Excel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchCreateJobsBody"
+      responses:
+        "201":
+          description: Jobs berhasil diimpor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                required:
+                  - count
+
+  /stats/daily:
+    get:
+      operationId: getDailyStats
+      tags: [stats]
+      summary: Get daily stats per writer
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: Daily stats per writer
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WriterDailyStat"
+
+  /stats/editor-daily:
+    get:
+      operationId: getEditorDailyStats
+      tags: [stats]
+      summary: Get daily stats per editor
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: Daily stats per editor
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EditorDailyStat"
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all users (admin only)
+      responses:
+        "200":
+          description: List of all users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserProfile"
+        "403":
+          description: Forbidden
+
+  /stats/summary:
+    get:
+      operationId: getSummaryStats
+      tags: [stats]
+      summary: Get overall summary stats
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: Summary stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SummaryStats"
+
+  /pm/auth/register:
+    post:
+      operationId: pmRegister
+      tags: [pm-auth]
+      summary: Register a new marketplace user (buyer or seller)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PmRegisterInput"
+      responses:
+        "201":
+          description: Registered user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmUser"
+        "400":
+          description: Validation error or email already taken
+
+  /pm/auth/login:
+    post:
+      operationId: pmLogin
+      tags: [pm-auth]
+      summary: Login to marketplace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PmLoginInput"
+      responses:
+        "200":
+          description: Logged in user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmUser"
+        "401":
+          description: Invalid credentials
+
+  /pm/auth/logout:
+    post:
+      operationId: pmLogout
+      tags: [pm-auth]
+      summary: Logout from marketplace
+      responses:
+        "200":
+          description: Logged out
+
+  /pm/auth/me:
+    get:
+      operationId: getPmMe
+      tags: [pm-auth]
+      summary: Get current marketplace user
+      responses:
+        "200":
+          description: Current marketplace user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmUser"
+        "401":
+          description: Not authenticated
+
+  /pm/categories:
+    get:
+      operationId: listPmCategories
+      tags: [pm-categories]
+      summary: List all proposal categories
+      responses:
+        "200":
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PmCategory"
+
+  /pm/proposals:
+    get:
+      operationId: listPmProposals
+      tags: [pm-proposals]
+      summary: Browse proposals (public)
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: categoryId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: minPrice
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: maxPrice
+          in: query
+          schema:
+            type: ["integer", "null"]
+      responses:
+        "200":
+          description: List of proposals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PmProposal"
+    post:
+      operationId: createPmProposal
+      tags: [pm-proposals]
+      summary: Create a new proposal (seller only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProposalInput"
+      responses:
+        "201":
+          description: Created proposal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmProposal"
+        "403":
+          description: Forbidden
+
+  /pm/proposals/my:
+    get:
+      operationId: listMyProposals
+      tags: [pm-proposals]
+      summary: List seller's own proposals
+      responses:
+        "200":
+          description: Seller's proposals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PmProposal"
+        "403":
+          description: Forbidden
+
+  /pm/proposals/{id}:
+    get:
+      operationId: getPmProposal
+      tags: [pm-proposals]
+      summary: Get proposal detail (public)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Proposal detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmProposal"
+        "404":
+          description: Not found
+    patch:
+      operationId: updatePmProposal
+      tags: [pm-proposals]
+      summary: Update a proposal (seller, own proposals only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProposalUpdate"
+      responses:
+        "200":
+          description: Updated proposal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmProposal"
+        "403":
+          description: Forbidden
+
+  /pm/proposals/{id}/moderate:
+    patch:
+      operationId: moderatePmProposal
+      tags: [pm-admin]
+      summary: Approve or reject a proposal (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProposalModeration"
+      responses:
+        "200":
+          description: Moderated proposal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmProposal"
+        "403":
+          description: Forbidden
+
+  /pm/transactions:
+    post:
+      operationId: createPmTransaction
+      tags: [pm-transactions]
+      summary: Initiate a purchase (buyer only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PmTransactionInput"
+      responses:
+        "201":
+          description: Created transaction with payment instructions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmTransaction"
+        "403":
+          description: Forbidden
+
+  /pm/transactions/purchases:
+    get:
+      operationId: listMyPurchases
+      tags: [pm-transactions]
+      summary: List buyer's purchased proposals
+      responses:
+        "200":
+          description: List of buyer's transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PmTransaction"
+        "403":
+          description: Forbidden
+
+  /pm/transactions/admin:
+    get:
+      operationId: listAdminTransactions
+      tags: [pm-admin]
+      summary: List all transactions (admin only)
+      responses:
+        "200":
+          description: All transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PmTransaction"
+        "403":
+          description: Forbidden
+
+  /pm/transactions/{id}/confirm:
+    post:
+      operationId: confirmPmPayment
+      tags: [pm-transactions]
+      summary: Confirm payment (stub for dev, replaced by gateway webhook in prod)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Payment confirmed, download token generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmTransaction"
+        "404":
+          description: Not found
+
+  /pm/transactions/{id}/download-token:
+    get:
+      operationId: getPmDownloadToken
+      tags: [pm-transactions]
+      summary: Get a download token for a paid transaction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Download token and URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmDownloadTokenResponse"
+        "403":
+          description: Not authorized or not paid
+        "404":
+          description: Not found
+
+  /pm/payouts:
+    post:
+      operationId: requestPmPayout
+      tags: [pm-payouts]
+      summary: Request a payout withdrawal (seller only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PmPayoutInput"
+      responses:
+        "201":
+          description: Payout request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmPayout"
+        "400":
+          description: Insufficient balance or below minimum
+        "403":
+          description: Forbidden
+
+  /pm/payouts/mine:
+    get:
+      operationId: listMyPayouts
+      tags: [pm-payouts]
+      summary: List seller's payout requests
+      responses:
+        "200":
+          description: Seller's payout requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PmPayout"
+        "403":
+          description: Forbidden
+
+  /pm/payouts/admin:
+    get:
+      operationId: listAdminPayouts
+      tags: [pm-admin]
+      summary: List all payout requests (admin only)
+      responses:
+        "200":
+          description: All payout requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PmPayout"
+        "403":
+          description: Forbidden
+
+  /pm/payouts/{id}:
+    patch:
+      operationId: updatePmPayout
+      tags: [pm-admin]
+      summary: Approve or reject a payout (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PmPayoutUpdate"
+      responses:
+        "200":
+          description: Updated payout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmPayout"
+        "403":
+          description: Forbidden
+
+  /pm/admin/stats:
+    get:
+      operationId: getPmAdminStats
+      tags: [pm-admin]
+      summary: Get platform revenue statistics (admin only)
+      responses:
+        "200":
+          description: Platform stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmAdminStats"
+        "403":
+          description: Forbidden
+
+  /pm/admin/users:
+    get:
+      operationId: listPmUsers
+      tags: [pm-admin]
+      summary: List all marketplace users (admin only)
+      responses:
+        "200":
+          description: All marketplace users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PmUser"
+        "403":
+          description: Forbidden
+
+  /pm/seller/stats:
+    get:
+      operationId: getPmSellerStats
+      tags: [pm-proposals]
+      summary: Get seller dashboard stats (total sales, earnings, pending payouts)
+      responses:
+        "200":
+          description: Seller stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PmSellerStats"
+        "403":
+          description: Forbidden
+
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a presigned upload URL for object storage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned upload URL and object path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponse"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    LoginBody:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required:
+        - username
+        - password
+
+    ChangePasswordBody:
+      type: object
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+      required:
+        - currentPassword
+        - newPassword
+
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        role:
+          type: string
+        writerId:
+          type: ["integer", "null"]
+        writerName:
+          type: ["string", "null"]
+        editorId:
+          type: ["integer", "null"]
+        editorName:
+          type: ["string", "null"]
+      required:
+        - id
+        - username
+        - role
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: integer
+        jobCode:
+          type: string
+        website:
+          type: string
+        username:
+          type: ["string", "null"]
+        password:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        petunjuk:
+          type: ["string", "null"]
+        versionTool:
+          type: string
+        wordCount:
+          type: integer
+        writerId:
+          type: ["integer", "null"]
+        writerName:
+          type: ["string", "null"]
+        editorId:
+          type: ["integer", "null"]
+        editorName:
+          type: ["string", "null"]
+        isChecked:
+          type: boolean
+        jobDate:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - jobCode
+        - website
+        - versionTool
+        - wordCount
+        - isChecked
+        - jobDate
+        - createdAt
+
+    CreateJobBody:
+      type: object
+      properties:
+        jobCode:
+          type: string
+        website:
+          type: string
+        username:
+          type: ["string", "null"]
+        password:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        petunjuk:
+          type: ["string", "null"]
+        versionTool:
+          type: string
+        wordCount:
+          type: integer
+        writerId:
+          type: ["integer", "null"]
+        editorId:
+          type: ["integer", "null"]
+        jobDate:
+          type: string
+      required:
+        - jobCode
+        - website
+        - versionTool
+        - wordCount
+        - jobDate
+
+    UpdateJobBody:
+      type: object
+      properties:
+        jobCode:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        username:
+          type: ["string", "null"]
+        password:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        petunjuk:
+          type: ["string", "null"]
+        versionTool:
+          type: ["string", "null"]
+        wordCount:
+          type: ["integer", "null"]
+        writerId:
+          type: ["integer", "null"]
+        editorId:
+          type: ["integer", "null"]
+        isChecked:
+          type: ["boolean", "null"]
+        jobDate:
+          type: ["string", "null"]
+        revisionNotes:
+          type: ["string", "null"]
+
+    Writer:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        fullName:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        bankAccount:
+          type: ["string", "null"]
+        joinDate:
+          type: ["string", "null"]
+        photoUrl:
+          type: ["string", "null"]
+        isAlsoEditor:
+          type: boolean
+        linkedEditorId:
+          type: ["integer", "null"]
+        isActive:
+          type: boolean
+        lastActiveDate:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - isAlsoEditor
+        - isActive
+        - createdAt
+
+    CreateWriterBody:
+      type: object
+      properties:
+        name:
+          type: string
+        fullName:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        bankAccount:
+          type: ["string", "null"]
+        bankName:
+          type: ["string", "null"]
+        accountOwner:
+          type: ["string", "null"]
+        joinDate:
+          type: ["string", "null"]
+        photoUrl:
+          type: ["string", "null"]
+        isAlsoEditor:
+          type: boolean
+        maxDailyWords:
+          type: ["integer", "null"]
+      required:
+        - name
+
+    UpdateWriterBody:
+      type: object
+      properties:
+        name:
+          type: ["string", "null"]
+        fullName:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        bankAccount:
+          type: ["string", "null"]
+        bankName:
+          type: ["string", "null"]
+        accountOwner:
+          type: ["string", "null"]
+        joinDate:
+          type: ["string", "null"]
+        photoUrl:
+          type: ["string", "null"]
+        isAlsoEditor:
+          type: boolean
+        isActive:
+          type: boolean
+        lastActiveDate:
+          type: ["string", "null"]
+        maxDailyWords:
+          type: ["integer", "null"]
+
+    Editor:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        isDeleted:
+          type: boolean
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - isDeleted
+        - createdAt
+
+    CreateEditorBody:
+      type: object
+      properties:
+        name:
+          type: string
+      required:
+        - name
+
+    WriterDailyStat:
+      type: object
+      properties:
+        writerId:
+          type: integer
+        writerName:
+          type: string
+        totalWords:
+          type: integer
+        totalJobs:
+          type: integer
+        completedJobs:
+          type: integer
+      required:
+        - writerId
+        - writerName
+        - totalWords
+        - totalJobs
+        - completedJobs
+
+    EditorDailyStat:
+      type: object
+      properties:
+        editorId:
+          type: integer
+        editorName:
+          type: string
+        totalEdited:
+          type: integer
+        totalWords:
+          type: integer
+      required:
+        - editorId
+        - editorName
+        - totalEdited
+        - totalWords
+
+    SummaryStats:
+      type: object
+      properties:
+        totalJobs:
+          type: integer
+        totalWords:
+          type: integer
+        completedJobs:
+          type: integer
+        pendingJobs:
+          type: integer
+        totalWriters:
+          type: integer
+        editedJobs:
+          type: integer
+      required:
+        - totalJobs
+        - totalWords
+        - completedJobs
+        - pendingJobs
+        - totalWriters
+        - editedJobs
+
+    MonthlySalaryResult:
+      type: object
+      properties:
+        userId:
+          type: ["integer", "null"]
+        role:
+          type: ["string", "null"]
+        writerId:
+          type: ["integer", "null"]
+        writerName:
+          type: ["string", "null"]
+        year:
+          type: integer
+        month:
+          type: integer
+        totalWords:
+          type: integer
+        totalJobs:
+          type: integer
+        editorId:
+          type: ["integer", "null"]
+        editorName:
+          type: ["string", "null"]
+        editorTotalWords:
+          type: integer
+        editorTotalJobs:
+          type: integer
+        allJobs:
+          type: integer
+        allWords:
+          type: integer
+        allEditorJobs:
+          type: integer
+        allEditorWords:
+          type: integer
+      required:
+        - year
+        - month
+        - totalWords
+        - totalJobs
+        - editorTotalWords
+        - editorTotalJobs
+        - allJobs
+        - allWords
+        - allEditorJobs
+        - allEditorWords
+
+    CSSalaryResult:
+      type: object
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+        totalWriterSalary:
+          type: integer
+        totalEditorSalary:
+          type: integer
+        topAchievement:
+          type: integer
+        bonus:
+          type: integer
+        pendapatanArtikel:
+          type: integer
+        writerCount:
+          type: integer
+        editorCount:
+          type: integer
+      required:
+        - year
+        - month
+        - totalWriterSalary
+        - totalEditorSalary
+        - topAchievement
+        - bonus
+        - pendapatanArtikel
+        - writerCount
+        - editorCount
+
+    AdditionalIncomeEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        year:
+          type: integer
+        month:
+          type: integer
+        amount:
+          type: integer
+        description:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - userId
+        - year
+        - month
+        - amount
+        - createdAt
+
+    AddAdditionalIncomeBody:
+      type: object
+      properties:
+        userId:
+          type: integer
+        year:
+          type: integer
+        month:
+          type: integer
+        amount:
+          type: integer
+        description:
+          type: ["string", "null"]
+      required:
+        - userId
+        - year
+        - month
+        - amount
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        role:
+          type: string
+        displayName:
+          type: ["string", "null"]
+        writerId:
+          type: ["integer", "null"]
+        writerName:
+          type: ["string", "null"]
+        editorId:
+          type: ["integer", "null"]
+        editorName:
+          type: ["string", "null"]
+      required:
+        - id
+        - username
+        - role
+
+    BatchJobItem:
+      type: object
+      properties:
+        jobCode:
+          type: string
+        website:
+          type: string
+        username:
+          type: ["string", "null"]
+        password:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        versionTool:
+          type: ["string", "null"]
+        wordCount:
+          type: ["integer", "null"]
+        writerId:
+          type: ["integer", "null"]
+        jobDate:
+          type: string
+      required:
+        - jobCode
+        - website
+        - jobDate
+
+    BatchCreateJobsBody:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/BatchJobItem"
+      required:
+        - jobs
+
+    PmUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        bankName:
+          type: ["string", "null"]
+        bankAccount:
+          type: ["string", "null"]
+        accountOwner:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - email
+        - role
+        - createdAt
+
+    PmRegisterInput:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+      required:
+        - name
+        - email
+        - password
+        - role
+
+    PmLoginInput:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    PmCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+      required:
+        - id
+        - name
+        - slug
+
+    PmProposal:
+      type: object
+      properties:
+        id:
+          type: integer
+        sellerId:
+          type: integer
+        sellerName:
+          type: ["string", "null"]
+        title:
+          type: string
+        description:
+          type: string
+        categoryId:
+          type: ["integer", "null"]
+        categoryName:
+          type: ["string", "null"]
+        price:
+          type: integer
+        fileKey:
+          type: ["string", "null"]
+        previewImageKey:
+          type: ["string", "null"]
+        previewImageKey2:
+          type: ["string", "null"]
+        previewImageKey3:
+          type: ["string", "null"]
+        status:
+          type: string
+        totalSales:
+          type: integer
+        createdAt:
+          type: string
+      required:
+        - id
+        - sellerId
+        - title
+        - description
+        - price
+        - status
+        - totalSales
+        - createdAt
+
+    ProposalInput:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        categoryId:
+          type: ["integer", "null"]
+        price:
+          type: integer
+        fileKey:
+          type: ["string", "null"]
+        previewImageKey:
+          type: ["string", "null"]
+        previewImageKey2:
+          type: ["string", "null"]
+        previewImageKey3:
+          type: ["string", "null"]
+      required:
+        - title
+        - description
+        - price
+
+    ProposalUpdate:
+      type: object
+      properties:
+        title:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        categoryId:
+          type: ["integer", "null"]
+        price:
+          type: ["integer", "null"]
+        fileKey:
+          type: ["string", "null"]
+        previewImageKey:
+          type: ["string", "null"]
+        previewImageKey2:
+          type: ["string", "null"]
+        previewImageKey3:
+          type: ["string", "null"]
+        status:
+          type: ["string", "null"]
+
+    ProposalModeration:
+      type: object
+      properties:
+        status:
+          type: string
+        adminNote:
+          type: ["string", "null"]
+      required:
+        - status
+
+    PmTransaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        buyerId:
+          type: integer
+        buyerName:
+          type: ["string", "null"]
+        proposalId:
+          type: integer
+        proposalTitle:
+          type: ["string", "null"]
+        amount:
+          type: integer
+        sellerShare:
+          type: integer
+        platformShare:
+          type: integer
+        paymentMethod:
+          type: ["string", "null"]
+        paymentFee:
+          type: integer
+        paymentId:
+          type: ["string", "null"]
+        paymentStatus:
+          type: string
+        paidAt:
+          type: ["string", "null"]
+        downloadToken:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - buyerId
+        - proposalId
+        - amount
+        - sellerShare
+        - platformShare
+        - paymentFee
+        - paymentStatus
+        - createdAt
+
+    PmTransactionInput:
+      type: object
+      properties:
+        proposalId:
+          type: integer
+        paymentMethod:
+          type: string
+        paymentFee:
+          type: integer
+      required:
+        - proposalId
+
+    PmDownloadTokenResponse:
+      type: object
+      properties:
+        downloadToken:
+          type: string
+        downloadUrl:
+          type: string
+      required:
+        - downloadToken
+        - downloadUrl
+
+    PmPayout:
+      type: object
+      properties:
+        id:
+          type: integer
+        sellerId:
+          type: integer
+        sellerName:
+          type: ["string", "null"]
+        sellerBankName:
+          type: ["string", "null"]
+        sellerBankAccount:
+          type: ["string", "null"]
+        sellerAccountOwner:
+          type: ["string", "null"]
+        amount:
+          type: integer
+        status:
+          type: string
+        adminNote:
+          type: ["string", "null"]
+        transferProofKey:
+          type: ["string", "null"]
+        requestedAt:
+          type: string
+        processedAt:
+          type: ["string", "null"]
+      required:
+        - id
+        - sellerId
+        - amount
+        - status
+        - requestedAt
+
+    PmPayoutInput:
+      type: object
+      properties:
+        amount:
+          type: integer
+      required:
+        - amount
+
+    PmPayoutUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+        adminNote:
+          type: ["string", "null"]
+        transferProofKey:
+          type: ["string", "null"]
+      required:
+        - status
+
+    PmAdminStats:
+      type: object
+      properties:
+        totalRevenue:
+          type: integer
+        platformRevenue:
+          type: integer
+        sellerPayouts:
+          type: integer
+        totalTransactions:
+          type: integer
+        totalProposals:
+          type: integer
+        totalSellers:
+          type: integer
+        totalBuyers:
+          type: integer
+        pendingPayouts:
+          type: integer
+      required:
+        - totalRevenue
+        - platformRevenue
+        - sellerPayouts
+        - totalTransactions
+        - totalProposals
+        - totalSellers
+        - totalBuyers
+        - pendingPayouts
+
+    PmSellerStats:
+      type: object
+      properties:
+        totalSales:
+          type: integer
+        totalEarnings:
+          type: integer
+        availableBalance:
+          type: integer
+        pendingPayouts:
+          type: integer
+        totalProposals:
+          type: integer
+      required:
+        - totalSales
+        - totalEarnings
+        - availableBalance
+        - pendingPayouts
+        - totalProposals
+
+    UploadUrlRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+        contentType:
+          type: string
+      required:
+        - name
+        - size
+        - contentType
+
+    UploadUrlResponse:
+      type: object
+      properties:
+        uploadURL:
+          type: string
+        objectPath:
+          type: string
+      required:
+        - uploadURL
+        - objectPath

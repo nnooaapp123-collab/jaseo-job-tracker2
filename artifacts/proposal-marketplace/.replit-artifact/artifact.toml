@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/marketplace/"
+title = "Proposal Marketplace"
+version = "1.0.0"
+id = "artifacts/proposal-marketplace"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/marketplace/" ]
+localPort = 22025
+
+[services.development]
+run = "pnpm --filter @workspace/proposal-marketplace run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/proposal-marketplace", "run", "build" ]
+publicDir = "artifacts/proposal-marketplace/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22025"
+BASE_PATH = "/marketplace/"

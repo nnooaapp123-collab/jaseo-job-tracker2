@@ -1,0 +1,20 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "Ot7zNFSVFDdmp6Av19j2D"
+uri = "file://artifacts/proposal-marketplace/public/demo-proposal-1.png"
+type = "image"
+title = "business proposal cover"
+
+[[generated]]
+id = "IMh0UVB_FlEoRyVE-vpjk"
+uri = "file://artifacts/proposal-marketplace/public/demo-proposal-2.png"
+type = "image"
+title = "marketing strategy cover"
+
+[[generated]]
+id = "tgVAmNMcwDik4tqMAPhDU"
+uri = "file://artifacts/proposal-marketplace/public/demo-proposal-3.png"
+type = "image"
+title = "financial report cover"
