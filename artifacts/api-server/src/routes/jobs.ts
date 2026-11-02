@@ -3074,17 +3074,16 @@ router.get("/salary/year-matrix", async (req, res) => {
   const writerMap = new Map(allWriters.map(w => [w.id, w]));
   const editorMap = new Map(allEditors.map(e => [e.id, e]));
 
-  // Karyawan aktif yang tampil di rekap gaji:
-  // - Role penulis/cs: writerId harus ada dan writer.isActive === true
-  // - Role "editor" (standalone) dikecualikan — di sistem baru, editor berasal dari
-  //   penulis dual-role saja; akun role=editor adalah akun lama yang sudah deprecated
-  const activeNonAdminUsers = allUsers.filter(u => {
+  // Gunakan akun writer-linked sebagai kandidat agar riwayat tahun terpilih
+  // tetap bisa dihitung meskipun penulis sekarang sudah dinonaktifkan.
+  // Role "editor" standalone tetap dikecualikan karena sudah deprecated.
+  const candidateUsers = allUsers.filter(u => {
     if (u.role === "admin" || u.role === "editor") return false;
-    if (u.writerId) {
-      const w = writerMap.get(u.writerId);
-      return !!(w?.isActive);
-    }
-    return false;
+    return !!(u.writerId && writerMap.has(u.writerId));
+  });
+  const activeNonAdminUsers = candidateUsers.filter(u => {
+    const writer = u.writerId ? writerMap.get(u.writerId) : undefined;
+    return !!writer?.isActive;
   });
 
   // Precompute per-month writer combined income (needed for CS calculation)
@@ -3110,7 +3109,7 @@ router.get("/salary/year-matrix", async (req, res) => {
   }
 
   const employees: any[] = [];
-  for (const emp of activeNonAdminUsers) {
+  for (const emp of candidateUsers) {
     const writer    = emp.writerId ? writerMap.get(emp.writerId) : undefined;
     const isDualRole = !!(writer?.isAlsoEditor && writer?.linkedEditorId);
     const months: Record<number, { salary: number; transferred: boolean; transferredAt: string | null }> = {};
@@ -3154,7 +3153,17 @@ router.get("/salary/year-matrix", async (req, res) => {
       if (ed) displayName = ed.name;
     }
 
-    employees.push({ userId: emp.id, name: displayName, role: emp.role, isDualRole, months });
+    const hasYearSalary = Object.values(months).some(month => month.salary > 0);
+    if (writer?.isActive || hasYearSalary) {
+      employees.push({
+        userId: emp.id,
+        name: displayName,
+        bankName: writer?.bankName ?? null,
+        role: emp.role,
+        isDualRole,
+        months,
+      });
+    }
   }
 
   employees.sort((a, b) => a.name.localeCompare(b.name, "id"));

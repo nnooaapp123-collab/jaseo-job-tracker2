@@ -31,6 +31,7 @@ type MonthData = {
 type Employee = {
   userId: number;
   name: string;
+  bankName: string | null;
   role: string;
   isDualRole: boolean;
   months: Record<number, MonthData>;
@@ -255,7 +256,7 @@ export default function RekapGajiPage() {
             <table className="text-xs border-collapse w-full">
               <thead>
                 <tr className="bg-slate-800 text-white dark:bg-slate-900">
-                  <th className="sticky left-0 z-10 bg-slate-800 dark:bg-slate-900 px-3 py-2.5 text-left font-semibold min-w-[140px] border-r border-slate-600 w-[140px]">
+                  <th className="sticky left-0 z-10 bg-slate-800 dark:bg-slate-900 px-3 py-2.5 text-left font-semibold min-w-[200px] border-r border-slate-600 w-[200px]">
                     Nama
                   </th>
                   {MONTH_SHORT.map((m, i) => (
@@ -273,11 +274,16 @@ export default function RekapGajiPage() {
                   return (
                     <tr key={emp.userId} className={rowBg}>
                       <td className={cn(
-                        "sticky left-0 z-10 px-3 py-1.5 border-r border-slate-200 dark:border-slate-700 w-[140px]",
+                        "sticky left-0 z-10 px-3 py-1.5 border-r border-slate-200 dark:border-slate-700 w-[200px] min-w-[200px]",
                         rowBg,
                       )}>
-                        <div className="flex items-center gap-1 flex-wrap">
+                        <div className="flex items-center gap-x-2 gap-y-1 flex-wrap">
                           <span className="font-semibold">{emp.name.toUpperCase()}</span>
+                          {emp.bankName && (
+                            <span className="font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                              {emp.bankName.toUpperCase()}
+                            </span>
+                          )}
                           {emp.isDualRole && (
                             <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-purple-300 text-purple-600 dark:border-purple-700 dark:text-purple-400">
                               +Ed
@@ -333,7 +339,7 @@ export default function RekapGajiPage() {
 
                 {/* Total row */}
                 <tr className="border-t-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-950/30 font-bold">
-                  <td className="sticky left-0 z-10 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 border-r border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 w-[140px]">
+                  <td className="sticky left-0 z-10 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 border-r border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 w-[200px] min-w-[200px]">
                     Total
                   </td>
                   {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
@@ -345,9 +351,11 @@ export default function RekapGajiPage() {
 
                 {/* Sudah Ditransfer row */}
                 <tr className="bg-green-50 dark:bg-green-950/20 font-semibold">
-                  <td className="sticky left-0 z-10 bg-green-50 dark:bg-green-950/20 px-3 py-1.5 border-r border-green-200 dark:border-green-800 text-green-800 dark:text-green-300 w-[140px] flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3 shrink-0" />
-                    <span>Sudah Transfer</span>
+                  <td className="sticky left-0 z-10 bg-green-50 dark:bg-green-950/20 px-3 py-1.5 border-r border-green-200 dark:border-green-800 text-green-800 dark:text-green-300 w-[200px] min-w-[200px]">
+                    <span className="flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3 shrink-0" />
+                      <span>Sudah Transfer</span>
+                    </span>
                   </td>
                   {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
                     <td key={m} className="px-2 py-1.5 text-center border-l border-green-100 dark:border-green-900 text-green-700 dark:text-green-400">
@@ -358,9 +366,11 @@ export default function RekapGajiPage() {
 
                 {/* Belum Ditransfer row */}
                 <tr className="bg-rose-50 dark:bg-rose-950/20 font-semibold">
-                  <td className="sticky left-0 z-10 bg-rose-50 dark:bg-rose-950/20 px-3 py-1.5 border-r border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 w-[140px] flex items-center gap-1">
-                    <Circle className="h-3 w-3 shrink-0" />
-                    <span>Belum Transfer</span>
+                  <td className="sticky left-0 z-10 bg-rose-50 dark:bg-rose-950/20 px-3 py-1.5 border-r border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 w-[200px] min-w-[200px]">
+                    <span className="flex items-center gap-1">
+                      <Circle className="h-3 w-3 shrink-0" />
+                      <span>Belum Transfer</span>
+                    </span>
                   </td>
                   {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
                     <td key={m} className="px-2 py-1.5 text-center border-l border-rose-100 dark:border-rose-900 text-rose-700 dark:text-rose-400">
