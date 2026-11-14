@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
-import { Plus, Trash2, Loader2, FileText, Printer, Pencil, Save, X, Settings as SettingsIcon, Download, MessageCircle } from "lucide-react";
+import { Plus, Trash2, Loader2, FileText, Printer, Pencil, Save, X, Settings as SettingsIcon, Download, MessageCircle, History } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,14 @@ type CompanyData = {
 type CompanyProfile = CompanyData & { id: string };
 type CompanySnapshot = CompanyData & { profileId: string };
 type InvoiceSettings = { profiles: CompanyProfile[]; defaultProfileId: string };
+type CompanyMigrationPreview = {
+  count: number;
+  beforeDate: string;
+  companyProfileId: string;
+  companyName: string;
+  earliestDate: string | null;
+  latestDate: string | null;
+};
 
 type InvoiceForm = {
   invoiceNumber: string; invoiceDate: string; dueDate: string;
@@ -103,6 +111,11 @@ export default function TagihanPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsForm, setSettingsForm] = useState<InvoiceSettings>({ profiles: [], defaultProfileId: "" });
   const [editingProfileId, setEditingProfileId] = useState("");
+  const [companyMigrationOpen, setCompanyMigrationOpen] = useState(false);
+  const [migrationBeforeDate, setMigrationBeforeDate] = useState("2026-11-11");
+  const [migrationProfileId, setMigrationProfileId] = useState("");
+  const [migrationPreview, setMigrationPreview] = useState<CompanyMigrationPreview | null>(null);
+  const [migrationConfirmation, setMigrationConfirmation] = useState("");
   const [editingCompanySnapshot, setEditingCompanySnapshot] = useState<CompanySnapshot | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
@@ -138,6 +151,13 @@ export default function TagihanPage() {
     },
   });
   const editingProfile = settingsForm.profiles.find((profile) => profile.id === editingProfileId) ?? settingsForm.profiles[0];
+  const canMigrateInvoices = currentUser?.role === "admin";
+
+  useEffect(() => {
+    if (!settings || migrationProfileId) return;
+    const kumbokarno = settings.profiles.find((profile) => profile.companyName.trim().toLowerCase() === "kumbokarno live");
+    setMigrationProfileId(kumbokarno?.id ?? settings.defaultProfileId);
+  }, [settings, migrationProfileId]);
 
   // ─── derived totals untuk form ──────────────────────────────────────────────
   const formSubtotal = useMemo(
@@ -305,6 +325,56 @@ export default function TagihanPage() {
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
+  const migrationPreviewMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${BASE}/api/invoice-company-migration/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ beforeDate: migrationBeforeDate, companyProfileId: migrationProfileId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Gagal menghitung invoice");
+      return body as CompanyMigrationPreview;
+    },
+    onSuccess: (preview) => {
+      setMigrationPreview(preview);
+      setMigrationConfirmation("");
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
+  });
+
+  const migrationMutation = useMutation({
+    mutationFn: async () => {
+      if (!migrationPreview) throw new Error("Buat pratinjau terlebih dahulu");
+      const res = await fetch(`${BASE}/api/invoice-company-migration`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          beforeDate: migrationPreview.beforeDate,
+          companyProfileId: migrationPreview.companyProfileId,
+          expectedCount: migrationPreview.count,
+          confirmation: migrationConfirmation,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Gagal memperbarui invoice");
+      return body as { updatedCount: number; companyName: string };
+    },
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: INVOICES_KEY });
+      setCompanyMigrationOpen(false);
+      setMigrationPreview(null);
+      setMigrationConfirmation("");
+      toast({ title: `${result.updatedCount} invoice diperbarui`, description: `Menggunakan profil ${result.companyName}.` });
+    },
+    onError: (e: Error) => {
+      if (e.message.includes("Jumlah invoice berubah")) setMigrationPreview(null);
+      toast({ title: e.message, variant: "destructive" });
+    },
+  });
+
   // Baca file gambar logo, kecilkan agar hemat (maks 500px), simpan sebagai data URL
   function handleLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -353,6 +423,15 @@ export default function TagihanPage() {
     setSettingsOpen(true);
   }
 
+  function openCompanyMigration() {
+    const kumbokarno = settings?.profiles.find((profile) => profile.companyName.trim().toLowerCase() === "kumbokarno live");
+    setMigrationBeforeDate("2026-11-11");
+    setMigrationProfileId(kumbokarno?.id ?? settings?.defaultProfileId ?? "");
+    setMigrationPreview(null);
+    setMigrationConfirmation("");
+    setCompanyMigrationOpen(true);
+  }
+
   useEffect(() => {
     if (settings && settingsForm.profiles.length === 0) {
       setSettingsForm(settings);
@@ -396,6 +475,11 @@ export default function TagihanPage() {
           <p className="text-sm text-muted-foreground">Buat & kelola invoice tagihan artikel.</p>
         </div>
         <div className="flex gap-2">
+          {canMigrateInvoices && (
+            <Button variant="outline" size="sm" onClick={openCompanyMigration} disabled={!settings?.profiles.length} data-testid="button-migrate-old-invoices">
+              <History className="h-4 w-4 mr-1" /> Invoice Lama
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={openSettings} disabled={!settings}><SettingsIcon className="h-4 w-4 mr-1" /> Pengaturan</Button>
           <Button size="sm" onClick={openCreate} disabled={!settings?.profiles.length}><Plus className="h-4 w-4 mr-1" /> Buat Tagihan</Button>
         </div>
@@ -574,6 +658,108 @@ export default function TagihanPage() {
             <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
               {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />} Simpan
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Company snapshot migration ──────────────────────────────────────── */}
+      <Dialog open={companyMigrationOpen} onOpenChange={setCompanyMigrationOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Pindahkan Invoice Lama</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Invoice sebelum tanggal yang dipilih akan memakai snapshot profil perusahaan tujuan. Nominal, status, dan pembayaran tidak berubah.
+          </p>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Profil perusahaan tujuan</Label>
+              <Select
+                value={migrationProfileId}
+                disabled={migrationPreviewMutation.isPending || migrationMutation.isPending}
+                onValueChange={(value) => {
+                  setMigrationProfileId(value);
+                  setMigrationPreview(null);
+                  setMigrationConfirmation("");
+                }}
+              >
+                <SelectTrigger data-testid="select-migration-company"><SelectValue placeholder="Pilih profil perusahaan" /></SelectTrigger>
+                <SelectContent>
+                  {(settings?.profiles ?? []).map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id}>{profile.companyName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="migration-before-date">Ubah invoice sebelum tanggal</Label>
+              <Input
+                id="migration-before-date"
+                type="date"
+                value={migrationBeforeDate}
+                disabled={migrationPreviewMutation.isPending || migrationMutation.isPending}
+                onChange={(event) => {
+                  setMigrationBeforeDate(event.target.value);
+                  setMigrationPreview(null);
+                  setMigrationConfirmation("");
+                }}
+                data-testid="input-migration-before-date"
+              />
+            </div>
+            {migrationPreview ? (
+              <div className="rounded-md border bg-muted/30 p-3 space-y-1" role="status" data-testid="status-migration-preview">
+                <p className="font-medium">{migrationPreview.count} invoice akan diperbarui</p>
+                <p className="text-sm text-muted-foreground">
+                  Sebelum {fmtTanggal(migrationPreview.beforeDate)} · {migrationPreview.companyName}
+                </p>
+                {migrationPreview.count > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Rentang invoice: {fmtTanggal(migrationPreview.earliestDate)}–{fmtTanggal(migrationPreview.latestDate)}.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Buat pratinjau untuk melihat jumlah invoice yang akan berubah.</p>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => migrationPreviewMutation.mutate()}
+              disabled={migrationPreviewMutation.isPending || !migrationProfileId || !migrationBeforeDate}
+              data-testid="button-preview-invoice-migration"
+            >
+              {migrationPreviewMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+              Pratinjau Jumlah
+            </Button>
+            {migrationPreview && migrationPreview.count > 0 && (
+              <div className="space-y-1.5 border-t pt-4">
+                <Label htmlFor="migration-confirmation">
+                  Ketik <span className="font-mono">PINDAHKAN {migrationPreview.count} INVOICE</span> untuk mengonfirmasi
+                </Label>
+                <Input
+                  id="migration-confirmation"
+                  value={migrationConfirmation}
+                  onChange={(event) => setMigrationConfirmation(event.target.value)}
+                  autoComplete="off"
+                  data-testid="input-migration-confirmation"
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setCompanyMigrationOpen(false)}>Batal</Button>
+            {migrationPreview && migrationPreview.count > 0 && (
+              <Button
+                variant="destructive"
+                onClick={() => migrationMutation.mutate()}
+                disabled={
+                  migrationMutation.isPending ||
+                  migrationConfirmation !== `PINDAHKAN ${migrationPreview.count} INVOICE`
+                }
+                data-testid="button-confirm-invoice-migration"
+              >
+                {migrationMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+                Perbarui Snapshot
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

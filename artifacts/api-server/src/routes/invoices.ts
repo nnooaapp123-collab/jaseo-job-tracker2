@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, invoicesTable, invoiceItemsTable, customersTable, usersTable, appSettingsTable, type InvoiceCompanySnapshot } from "@workspace/db";
-import { eq, and, desc, asc, isNull } from "drizzle-orm";
+import { eq, and, desc, asc, isNull, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 
 const router = Router();
@@ -12,6 +12,17 @@ async function requireAdminOrCs(req: any, res: any): Promise<boolean> {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
   if (!user || (user.role !== "admin" && user.role !== "cs")) {
     res.status(403).json({ error: "Hanya Admin/CS" }); return false;
+  }
+  return true;
+}
+
+async function requireAdmin(req: any, res: any): Promise<boolean> {
+  const userId = (req.session as any)?.userId;
+  if (!userId) { res.status(401).json({ error: "Belum login" }); return false; }
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
+  if (!user || user.role !== "admin") {
+    res.status(403).json({ error: "Hanya Admin yang dapat memindahkan profil invoice" });
+    return false;
   }
   return true;
 }
@@ -49,6 +60,20 @@ const DEFAULT_FOOTER = [
 // ─── Zod schemas ────────────────────────────────────────────────────────────
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const dateField = z.string().regex(DATE_RE, "Format tanggal harus yyyy-MM-dd");
+const migrationDateField = dateField.refine((value) => {
+  const parsedDate = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsedDate.valueOf()) && parsedDate.toISOString().slice(0, 10) === value;
+}, "Tanggal tidak valid");
+
+const companyMigrationPreviewSchema = z.object({
+  beforeDate: migrationDateField,
+  companyProfileId: z.string().min(1).max(100),
+});
+
+const companyMigrationSchema = companyMigrationPreviewSchema.extend({
+  expectedCount: z.number().int().nonnegative(),
+  confirmation: z.string(),
+});
 
 const itemSchema = z.object({
   description: z.string().min(1, "Keterangan wajib diisi"),
@@ -236,6 +261,85 @@ router.get("/invoices/next-number", async (req, res) => {
     .where(eq(invoicesTable.invoiceDate, `${yyyy}-${mm}-${dd}`));
   const seq = String(todays.length + 1).padStart(2, "0");
   res.json({ invoiceNumber: `${prefix}${seq}` });
+});
+
+// ─── POST /api/invoice-company-migration/preview ────────────────────────────
+router.post("/invoice-company-migration/preview", async (req, res): Promise<void> => {
+  if (!(await requireAdmin(req, res))) return;
+  const parsed = companyMigrationPreviewSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Data tidak valid" });
+    return;
+  }
+  const settings = await getInvoiceSettings();
+  const profile = settings.profiles.find((item) => item.id === parsed.data.companyProfileId);
+  if (!profile) {
+    res.status(400).json({ error: "Profil perusahaan tidak ditemukan" });
+    return;
+  }
+
+  const [summary] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      earliestDate: sql<string | null>`min(${invoicesTable.invoiceDate})`,
+      latestDate: sql<string | null>`max(${invoicesTable.invoiceDate})`,
+    })
+    .from(invoicesTable)
+    .where(lt(invoicesTable.invoiceDate, parsed.data.beforeDate));
+  res.json({
+    count: Number(summary?.count ?? 0),
+    beforeDate: parsed.data.beforeDate,
+    companyProfileId: profile.id,
+    companyName: profile.companyName,
+    earliestDate: summary?.earliestDate ?? null,
+    latestDate: summary?.latestDate ?? null,
+  });
+});
+
+// ─── POST /api/invoice-company-migration ────────────────────────────────────
+router.post("/invoice-company-migration", async (req, res): Promise<void> => {
+  if (!(await requireAdmin(req, res))) return;
+  const parsed = companyMigrationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Data tidak valid" });
+    return;
+  }
+  if (parsed.data.confirmation !== `PINDAHKAN ${parsed.data.expectedCount} INVOICE`) {
+    res.status(400).json({ error: "Ketik frasa konfirmasi persis seperti yang ditampilkan" });
+    return;
+  }
+  const settings = await getInvoiceSettings();
+  const profile = settings.profiles.find((item) => item.id === parsed.data.companyProfileId);
+  if (!profile) {
+    res.status(400).json({ error: "Profil perusahaan tidak ditemukan" });
+    return;
+  }
+
+  try {
+    const updatedCount = await db.transaction(async (tx) => {
+      const updated = await tx
+        .update(invoicesTable)
+        .set({ companySnapshot: snapshotProfile(profile) })
+        .where(lt(invoicesTable.invoiceDate, parsed.data.beforeDate))
+        .returning({ id: invoicesTable.id });
+      if (updated.length !== parsed.data.expectedCount) {
+        throw new Error("INVOICE_COUNT_CHANGED");
+      }
+      return updated.length;
+    });
+    res.json({
+      ok: true,
+      updatedCount,
+      beforeDate: parsed.data.beforeDate,
+      companyName: profile.companyName,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "INVOICE_COUNT_CHANGED") {
+      res.status(409).json({ error: "Jumlah invoice berubah sejak pratinjau. Buat pratinjau baru sebelum melanjutkan." });
+      return;
+    }
+    throw err;
+  }
 });
 
 // ─── GET /api/invoices ──────────────────────────────────────────────────────
