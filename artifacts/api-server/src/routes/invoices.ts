@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, invoicesTable, invoiceItemsTable, customersTable, usersTable, appSettingsTable } from "@workspace/db";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { db, invoicesTable, invoiceItemsTable, customersTable, usersTable, appSettingsTable, type InvoiceCompanySnapshot } from "@workspace/db";
+import { eq, and, desc, asc, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 const router = Router();
@@ -21,19 +21,16 @@ async function getSetting(key: string): Promise<string | null> {
   const [row] = await db.select().from(appSettingsTable).where(eq(appSettingsTable.key, key));
   return row?.value ?? null;
 }
-async function setSetting(key: string, value: string): Promise<void> {
-  await db
-    .insert(appSettingsTable)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: appSettingsTable.key, set: { value, updatedAt: new Date() } });
-}
 
 const INV_COMPANY_KEY = "invoice_company_name";
 const INV_PAYMENT_KEY = "invoice_payment_notes";
 const INV_FOOTER_KEY = "invoice_footer";
 const INV_LOGO_KEY = "invoice_logo";
+const INV_ADDRESS_KEY = "invoice_company_address";
+const INV_PROFILES_KEY = "invoice_company_profiles";
 
 const DEFAULT_COMPANY = "JASEO KONTEN MEDIA";
+const DEFAULT_ADDRESS = "Krinjing RT 06, Mertelu, Gedangsari, Gunungkidul, Yogyakarta";
 const DEFAULT_PAYMENT = [
   "Pembayaran ke salah satu",
   "BRI : 697901009557530 an. supriyadi",
@@ -63,6 +60,7 @@ const invoiceBodySchema = z.object({
   invoiceNumber: z.string().min(1, "Nomor tagihan wajib diisi"),
   invoiceDate: dateField,
   dueDate: z.union([dateField, z.literal(""), z.null()]).optional(),
+  companyProfileId: z.string().nullish(),
   customerId: z.coerce.number().int().nullish(),
   customerName: z.string().min(1, "Nama pelanggan wajib diisi"),
   status: z.enum(["belum_dibayar", "lunas", "sebagian"]).default("belum_dibayar"),
@@ -89,11 +87,12 @@ function validateFinancials(data: z.infer<typeof invoiceBodySchema>): string | n
   return null;
 }
 
-const settingsSchema = z.object({
-  companyName: z.string().min(1),
+const companyProfileSchema = z.object({
+  id: z.string().min(1).max(100),
+  companyName: z.string().trim().min(1),
+  address: z.string().max(1000).default(""),
   paymentNotes: z.string(),
   footer: z.string(),
-  // Logo custom sebagai data URL gambar; string kosong = pakai logo default
   logoUrl: z
     .string()
     .max(1_500_000, "Ukuran logo terlalu besar (maks ±1 MB)")
@@ -104,6 +103,61 @@ const settingsSchema = z.object({
     .optional()
     .default(""),
 });
+const settingsSchema = z.object({
+  profiles: z.array(companyProfileSchema).min(1, "Minimal satu profil perusahaan").max(25),
+  defaultProfileId: z.string().min(1),
+}).superRefine((settings, ctx) => {
+  const ids = settings.profiles.map((profile) => profile.id);
+  if (new Set(ids).size !== ids.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "ID profil perusahaan tidak boleh duplikat" });
+  }
+  if (!ids.includes(settings.defaultProfileId)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Pilih profil perusahaan default yang tersedia" });
+  }
+});
+
+type CompanyProfile = z.infer<typeof companyProfileSchema>;
+
+function snapshotProfile(profile: CompanyProfile): InvoiceCompanySnapshot {
+  const { id, ...company } = profile;
+  return { profileId: id, ...company };
+}
+
+async function getLegacyCompanyProfile(): Promise<CompanyProfile> {
+  const [companyName, address, paymentNotes, footer, logoUrl] = await Promise.all([
+    getSetting(INV_COMPANY_KEY),
+    getSetting(INV_ADDRESS_KEY),
+    getSetting(INV_PAYMENT_KEY),
+    getSetting(INV_FOOTER_KEY),
+    getSetting(INV_LOGO_KEY),
+  ]);
+  return {
+    id: "jaseo-default",
+    companyName: companyName ?? DEFAULT_COMPANY,
+    address: address ?? DEFAULT_ADDRESS,
+    paymentNotes: paymentNotes ?? DEFAULT_PAYMENT,
+    footer: footer ?? DEFAULT_FOOTER,
+    logoUrl: logoUrl ?? "",
+  };
+}
+
+async function getInvoiceSettings(): Promise<{ profiles: CompanyProfile[]; defaultProfileId: string }> {
+  const rawProfiles = await getSetting(INV_PROFILES_KEY);
+  if (!rawProfiles) {
+    const legacyProfile = await getLegacyCompanyProfile();
+    return { profiles: [legacyProfile], defaultProfileId: legacyProfile.id };
+  }
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(rawProfiles);
+  } catch {
+    throw new Error("Data profil perusahaan tidak dapat dibaca");
+  }
+  const parsed = settingsSchema.safeParse(decoded);
+  if (!parsed.success) throw new Error("Data profil perusahaan tidak valid");
+  return parsed.data;
+}
 
 // Parse :id param; kirim 400 dan kembalikan null jika tidak valid.
 function parseId(req: any, res: any): number | null {
@@ -128,12 +182,7 @@ function isUniqueViolation(err: unknown): boolean {
 // ─── GET /api/invoice-settings ──────────────────────────────────────────────
 router.get("/invoice-settings", async (req, res) => {
   if (!(await requireAdminOrCs(req, res))) return;
-  res.json({
-    companyName: (await getSetting(INV_COMPANY_KEY)) ?? DEFAULT_COMPANY,
-    paymentNotes: (await getSetting(INV_PAYMENT_KEY)) ?? DEFAULT_PAYMENT,
-    footer: (await getSetting(INV_FOOTER_KEY)) ?? DEFAULT_FOOTER,
-    logoUrl: (await getSetting(INV_LOGO_KEY)) ?? "",
-  });
+  res.json(await getInvoiceSettings());
 });
 
 // ─── PUT /api/invoice-settings ──────────────────────────────────────────────
@@ -141,10 +190,32 @@ router.put("/invoice-settings", async (req, res) => {
   if (!(await requireAdminOrCs(req, res))) return;
   const parsed = settingsSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Data tidak valid" }); return; }
-  await setSetting(INV_COMPANY_KEY, parsed.data.companyName);
-  await setSetting(INV_PAYMENT_KEY, parsed.data.paymentNotes);
-  await setSetting(INV_FOOTER_KEY, parsed.data.footer);
-  await setSetting(INV_LOGO_KEY, parsed.data.logoUrl);
+  const previousCompany = await getLegacyCompanyProfile();
+  const previousSnapshot = snapshotProfile(previousCompany);
+  const defaultProfile = parsed.data.profiles.find((profile) => profile.id === parsed.data.defaultProfileId)!;
+  const values = [
+    [INV_PROFILES_KEY, JSON.stringify(parsed.data)],
+    [INV_COMPANY_KEY, defaultProfile.companyName],
+    [INV_ADDRESS_KEY, defaultProfile.address],
+    [INV_PAYMENT_KEY, defaultProfile.paymentNotes],
+    [INV_FOOTER_KEY, defaultProfile.footer],
+    [INV_LOGO_KEY, defaultProfile.logoUrl],
+  ] as const;
+
+  await db.transaction(async (tx) => {
+    // Bekukan invoice lama memakai data yang sedang tampil sebelum pengaturan berubah.
+    await tx
+      .update(invoicesTable)
+      .set({ companySnapshot: previousSnapshot })
+      .where(isNull(invoicesTable.companySnapshot));
+
+    for (const [key, value] of values) {
+      await tx
+        .insert(appSettingsTable)
+        .values({ key, value })
+        .onConflictDoUpdate({ target: appSettingsTable.key, set: { value, updatedAt: new Date() } });
+    }
+  });
   res.json({ ok: true });
 });
 
@@ -171,7 +242,19 @@ router.get("/invoices/next-number", async (req, res) => {
 router.get("/invoices", async (req, res) => {
   if (!(await requireAdminOrCs(req, res))) return;
   const rows = await db
-    .select()
+    .select({
+      id: invoicesTable.id,
+      invoiceNumber: invoicesTable.invoiceNumber,
+      invoiceDate: invoicesTable.invoiceDate,
+      dueDate: invoicesTable.dueDate,
+      customerId: invoicesTable.customerId,
+      customerName: invoicesTable.customerName,
+      status: invoicesTable.status,
+      tax: invoicesTable.tax,
+      paidAmount: invoicesTable.paidAmount,
+      notes: invoicesTable.notes,
+      createdAt: invoicesTable.createdAt,
+    })
     .from(invoicesTable)
     .orderBy(desc(invoicesTable.createdAt));
 
@@ -204,7 +287,14 @@ router.get("/invoices/:id", async (req, res) => {
     .orderBy(asc(invoiceItemsTable.sortOrder), asc(invoiceItemsTable.id));
   const subtotal = items.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
   const total = subtotal + inv.tax;
-  res.json({ ...inv, items, subtotal, total, remaining: total - inv.paidAmount });
+  res.json({
+    ...inv,
+    companySnapshot: inv.companySnapshot ?? snapshotProfile(await getLegacyCompanyProfile()),
+    items,
+    subtotal,
+    total,
+    remaining: total - inv.paidAmount,
+  });
 });
 
 // ─── POST /api/invoices ─────────────────────────────────────────────────────
@@ -214,6 +304,11 @@ router.post("/invoices", async (req, res) => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Data tidak valid" }); return; }
   const finErr = validateFinancials(parsed.data);
   if (finErr) { res.status(400).json({ error: finErr }); return; }
+  const companySettings = await getInvoiceSettings();
+  const companyProfileId = parsed.data.companyProfileId || companySettings.defaultProfileId;
+  const selectedCompany = companySettings.profiles.find((profile) => profile.id === companyProfileId);
+  if (!selectedCompany) { res.status(400).json({ error: "Profil perusahaan tidak ditemukan" }); return; }
+  const companySnapshot = snapshotProfile(selectedCompany);
   const { items, ...inv } = parsed.data;
 
   try {
@@ -230,6 +325,7 @@ router.post("/invoices", async (req, res) => {
           tax: inv.tax,
           paidAmount: inv.paidAmount,
           notes: inv.notes ?? null,
+          companySnapshot,
         })
         .returning();
       await tx.insert(invoiceItemsTable).values(
@@ -266,6 +362,7 @@ router.patch("/invoices/:id", async (req, res) => {
   const finErr = validateFinancials(parsed.data);
   if (finErr) { res.status(400).json({ error: finErr }); return; }
   const { items, ...inv } = parsed.data;
+  const companySnapshot = existing.companySnapshot ?? snapshotProfile(await getLegacyCompanyProfile());
 
   try {
     await db.transaction(async (tx) => {
@@ -281,6 +378,7 @@ router.patch("/invoices/:id", async (req, res) => {
           tax: inv.tax,
           paidAmount: inv.paidAmount,
           notes: inv.notes ?? null,
+          companySnapshot,
         })
         .where(eq(invoicesTable.id, id));
 

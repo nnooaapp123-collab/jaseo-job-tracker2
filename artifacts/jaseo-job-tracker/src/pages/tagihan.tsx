@@ -34,12 +34,23 @@ type InvoiceListRow = {
 };
 type InvoiceDetail = InvoiceListRow & {
   customerId: number | null; notes: string | null;
+  companySnapshot: CompanySnapshot | null;
   items: { id: number; description: string; quantity: number; unitPrice: number }[];
 };
-type InvoiceSettings = { companyName: string; paymentNotes: string; footer: string; logoUrl: string };
+type CompanyData = {
+  companyName: string;
+  address: string;
+  paymentNotes: string;
+  footer: string;
+  logoUrl: string;
+};
+type CompanyProfile = CompanyData & { id: string };
+type CompanySnapshot = CompanyData & { profileId: string };
+type InvoiceSettings = { profiles: CompanyProfile[]; defaultProfileId: string };
 
 type InvoiceForm = {
   invoiceNumber: string; invoiceDate: string; dueDate: string;
+  companyProfileId: string;
   customerMode: string; // "manual" | customerId(string)
   customerName: string;
   status: "belum_dibayar" | "lunas" | "sebagian";
@@ -48,8 +59,9 @@ type InvoiceForm = {
 };
 
 const EMPTY_ITEM: ItemForm = { description: "", quantity: "1", unitPrice: "0" };
-const emptyForm = (): InvoiceForm => ({
+const emptyForm = (companyProfileId = ""): InvoiceForm => ({
   invoiceNumber: "", invoiceDate: format(new Date(), "yyyy-MM-dd"), dueDate: "",
+  companyProfileId,
   customerMode: "manual", customerName: "",
   status: "belum_dibayar", tax: "0", paidAmount: "0", notes: "",
   items: [{ ...EMPTY_ITEM }],
@@ -89,7 +101,9 @@ export default function TagihanPage() {
   const [form, setForm] = useState<InvoiceForm>(emptyForm());
   const [printInvoice, setPrintInvoice] = useState<InvoiceDetail | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsForm, setSettingsForm] = useState<InvoiceSettings>({ companyName: "", paymentNotes: "", footer: "", logoUrl: "" });
+  const [settingsForm, setSettingsForm] = useState<InvoiceSettings>({ profiles: [], defaultProfileId: "" });
+  const [editingProfileId, setEditingProfileId] = useState("");
+  const [editingCompanySnapshot, setEditingCompanySnapshot] = useState<CompanySnapshot | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const canAccess = currentUser?.role === "admin" || currentUser?.role === "cs";
@@ -123,6 +137,7 @@ export default function TagihanPage() {
       return res.json();
     },
   });
+  const editingProfile = settingsForm.profiles.find((profile) => profile.id === editingProfileId) ?? settingsForm.profiles[0];
 
   // ─── derived totals untuk form ──────────────────────────────────────────────
   const formSubtotal = useMemo(
@@ -135,6 +150,10 @@ export default function TagihanPage() {
   // Status diturunkan otomatis dari jumlah yang dibayar agar selalu konsisten.
   const formStatus: InvoiceForm["status"] =
     formTotal > 0 && formPaid >= formTotal ? "lunas" : formPaid > 0 ? "sebagian" : "belum_dibayar";
+  const printCompany = printInvoice?.companySnapshot
+    ?? settings?.profiles.find((profile) => profile.id === settings.defaultProfileId)
+    ?? settings?.profiles[0]
+    ?? null;
 
   // ─── form handlers ──────────────────────────────────────────────────────────
   function setItem(idx: number, patch: Partial<ItemForm>) {
@@ -148,13 +167,14 @@ export default function TagihanPage() {
   }
 
   async function openCreate() {
-    const f = emptyForm();
+    const f = emptyForm(settings?.defaultProfileId ?? "");
     try {
       const res = await fetch(`${BASE}/api/invoices/next-number`, { credentials: "include" });
       if (res.ok) { const d = await res.json(); f.invoiceNumber = d.invoiceNumber; }
     } catch { /* ignore */ }
     setForm(f);
     setEditId(null);
+    setEditingCompanySnapshot(null);
     setFormOpen(true);
   }
 
@@ -166,6 +186,7 @@ export default function TagihanPage() {
       invoiceNumber: d.invoiceNumber,
       invoiceDate: d.invoiceDate,
       dueDate: d.dueDate ?? "",
+      companyProfileId: d.companySnapshot?.profileId ?? settings?.defaultProfileId ?? "",
       customerMode: d.customerId != null ? String(d.customerId) : "manual",
       customerName: d.customerName,
       status: (d.status as InvoiceForm["status"]) ?? "belum_dibayar",
@@ -177,6 +198,7 @@ export default function TagihanPage() {
         : [{ ...EMPTY_ITEM }],
     });
     setEditId(id);
+    setEditingCompanySnapshot(d.companySnapshot);
     setFormOpen(true);
   }
 
@@ -218,6 +240,7 @@ export default function TagihanPage() {
         invoiceNumber: form.invoiceNumber.trim(),
         invoiceDate: form.invoiceDate,
         dueDate: form.dueDate || null,
+        companyProfileId: editId ? null : (form.companyProfileId || settings?.defaultProfileId || null),
         customerId: form.customerMode === "manual" ? null : Number(form.customerMode),
         customerName: form.customerName.trim(),
         status: formStatus,
@@ -308,7 +331,7 @@ export default function TagihanPage() {
           toast({ title: "Ukuran logo terlalu besar, coba gambar yang lebih kecil", variant: "destructive" });
           return;
         }
-        setSettingsForm((s) => ({ ...s, logoUrl: dataUrl }));
+        updateEditingProfile({ logoUrl: dataUrl });
       };
       img.onerror = () => toast({ title: "Gagal membaca gambar", variant: "destructive" });
       img.src = reader.result as string;
@@ -323,13 +346,43 @@ export default function TagihanPage() {
   }
 
   function openSettings() {
-    if (settings) setSettingsForm(settings);
+    if (settings) {
+      setSettingsForm(settings);
+      setEditingProfileId(settings.defaultProfileId);
+    }
     setSettingsOpen(true);
   }
 
   useEffect(() => {
-    if (settings && !settingsForm.companyName) setSettingsForm(settings);
+    if (settings && settingsForm.profiles.length === 0) {
+      setSettingsForm(settings);
+      setEditingProfileId(settings.defaultProfileId);
+    }
   }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function updateEditingProfile(patch: Partial<CompanyProfile>) {
+    if (!editingProfile) return;
+    setSettingsForm((current) => ({
+      ...current,
+      profiles: current.profiles.map((profile) =>
+        profile.id === editingProfile.id ? { ...profile, ...patch } : profile
+      ),
+    }));
+  }
+
+  function addCompanyProfile() {
+    const source = editingProfile;
+    const profile: CompanyProfile = {
+      id: crypto.randomUUID(),
+      companyName: "Perusahaan Baru",
+      address: source?.address ?? "",
+      logoUrl: source?.logoUrl ?? "",
+      paymentNotes: source?.paymentNotes ?? "",
+      footer: source?.footer ?? "",
+    };
+    setSettingsForm((current) => ({ ...current, profiles: [...current.profiles, profile] }));
+    setEditingProfileId(profile.id);
+  }
 
   if (!canAccess) {
     return <div className="p-6 text-center text-muted-foreground">Halaman ini hanya untuk Admin & CS.</div>;
@@ -343,8 +396,8 @@ export default function TagihanPage() {
           <p className="text-sm text-muted-foreground">Buat & kelola invoice tagihan artikel.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={openSettings}><SettingsIcon className="h-4 w-4 mr-1" /> Pengaturan</Button>
-          <Button size="sm" onClick={openCreate}><Plus className="h-4 w-4 mr-1" /> Buat Tagihan</Button>
+          <Button variant="outline" size="sm" onClick={openSettings} disabled={!settings}><SettingsIcon className="h-4 w-4 mr-1" /> Pengaturan</Button>
+          <Button size="sm" onClick={openCreate} disabled={!settings?.profiles.length}><Plus className="h-4 w-4 mr-1" /> Buat Tagihan</Button>
         </div>
       </div>
 
@@ -411,6 +464,30 @@ export default function TagihanPage() {
               <div>
                 <Label>Batas Akhir Bayar</Label>
                 <Input type="date" value={form.dueDate} onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>Data Perusahaan pada Tagihan</Label>
+                {editId ? (
+                  <div className="mt-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                    <div className="font-medium">{editingCompanySnapshot?.companyName ?? "Data perusahaan lama"}</div>
+                    <div className="text-xs text-muted-foreground">Data perusahaan pada invoice ini dikunci dan tidak berubah saat pengaturan diperbarui.</div>
+                  </div>
+                ) : (
+                  <Select
+                    value={form.companyProfileId || settings?.defaultProfileId || ""}
+                    onValueChange={(companyProfileId) => setForm((f) => ({ ...f, companyProfileId }))}
+                    disabled={!settings?.profiles.length}
+                  >
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Pilih perusahaan" /></SelectTrigger>
+                    <SelectContent>
+                      {settings?.profiles.map((profile) => (
+                        <SelectItem key={profile.id} value={profile.id}>
+                          {profile.companyName}{profile.id === settings.defaultProfileId ? " (default)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div>
                 <Label>Pelanggan</Label>
@@ -503,19 +580,52 @@ export default function TagihanPage() {
 
       {/* ─── Settings Dialog ─────────────────────────────────────────────────── */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Pengaturan Tagihan</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div>
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <Label>Profil Perusahaan</Label>
+                <Select value={editingProfileId} onValueChange={setEditingProfileId}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Pilih profil perusahaan" /></SelectTrigger>
+                  <SelectContent>
+                    {settingsForm.profiles.map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>{profile.companyName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="button" variant="outline" onClick={addCompanyProfile}>
+                <Plus className="h-4 w-4 mr-1" /> Tambah Perusahaan
+              </Button>
+            </div>
+            {editingProfile && (
+              <div className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2">
+                <span className="text-sm text-muted-foreground">
+                  {editingProfile.id === settingsForm.defaultProfileId ? "Perusahaan default untuk tagihan baru" : "Profil perusahaan"}
+                </span>
+                {editingProfile.id !== settingsForm.defaultProfileId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSettingsForm((current) => ({ ...current, defaultProfileId: editingProfile.id }))}
+                  >
+                    Jadikan Default
+                  </Button>
+                )}
+              </div>
+            )}
+            {editingProfile && <div>
               <Label>Logo Tagihan</Label>
               <div className="flex items-center gap-3 mt-1">
                 <div className="h-16 w-28 border rounded-md bg-white flex items-center justify-center overflow-hidden shrink-0">
-                  <img src={settingsForm.logoUrl || logoJaseo} alt="Logo" className="max-h-full max-w-full object-contain" />
+                  <img src={editingProfile.logoUrl || logoJaseo} alt="Logo perusahaan" className="max-h-full max-w-full object-contain" />
                 </div>
                 <div className="space-y-1.5 flex-1">
                   <Input type="file" accept="image/*" onChange={handleLogoFile} className="text-xs" />
-                  {settingsForm.logoUrl ? (
-                    <Button type="button" variant="outline" size="sm" onClick={() => setSettingsForm((s) => ({ ...s, logoUrl: "" }))}>
+                  {editingProfile.logoUrl ? (
+                    <Button type="button" variant="outline" size="sm" onClick={() => updateEditingProfile({ logoUrl: "" })}>
                       <X className="h-3.5 w-3.5 mr-1" /> Kembalikan Logo Default
                     </Button>
                   ) : (
@@ -523,23 +633,27 @@ export default function TagihanPage() {
                   )}
                 </div>
               </div>
-            </div>
-            <div>
+            </div>}
+            {editingProfile && <div>
               <Label>Nama Perusahaan</Label>
-              <Input value={settingsForm.companyName} onChange={(e) => setSettingsForm((s) => ({ ...s, companyName: e.target.value }))} />
-            </div>
-            <div>
+              <Input value={editingProfile.companyName} onChange={(e) => updateEditingProfile({ companyName: e.target.value })} />
+            </div>}
+            {editingProfile && <div>
+              <Label>Alamat Perusahaan</Label>
+              <Textarea value={editingProfile.address} onChange={(e) => updateEditingProfile({ address: e.target.value })} rows={2} />
+            </div>}
+            {editingProfile && <div>
               <Label>Catatan Pembayaran (rekening)</Label>
-              <Textarea value={settingsForm.paymentNotes} onChange={(e) => setSettingsForm((s) => ({ ...s, paymentNotes: e.target.value }))} rows={7} />
-            </div>
-            <div>
+              <Textarea value={editingProfile.paymentNotes} onChange={(e) => updateEditingProfile({ paymentNotes: e.target.value })} rows={7} />
+            </div>}
+            {editingProfile && <div>
               <Label>Teks Penutup</Label>
-              <Textarea value={settingsForm.footer} onChange={(e) => setSettingsForm((s) => ({ ...s, footer: e.target.value }))} rows={3} />
-            </div>
+              <Textarea value={editingProfile.footer} onChange={(e) => updateEditingProfile({ footer: e.target.value })} rows={3} />
+            </div>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSettingsOpen(false)}>Batal</Button>
-            <Button onClick={() => saveSettingsMutation.mutate()} disabled={saveSettingsMutation.isPending}>
+            <Button onClick={() => saveSettingsMutation.mutate()} disabled={saveSettingsMutation.isPending || !settingsForm.profiles.length || !settingsForm.profiles.every((profile) => profile.companyName.trim())}>
               {saveSettingsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />} Simpan
             </Button>
           </DialogFooter>
@@ -561,10 +675,10 @@ export default function TagihanPage() {
       </Dialog>
 
       {/* ─── Print overlay ───────────────────────────────────────────────────── */}
-      {printInvoice && settings && (
+      {printInvoice && printCompany && (
         <InvoicePrint
           invoice={printInvoice}
-          settings={settings}
+          company={printCompany}
           customerWa={customers.find((c) => c.id === printInvoice.customerId)?.wa ?? null}
           onClose={() => setPrintInvoice(null)}
         />
@@ -574,8 +688,6 @@ export default function TagihanPage() {
 }
 
 // ─── Print view (layout mengikuti contoh PDF) ─────────────────────────────────
-const OFFICE_ADDRESS = "Krinjing RT 06, Mertelu, Gedangsari, Gunungkidul, Yogyakarta";
-
 function normalizeWa(wa: string | null): string {
   if (!wa) return "";
   let d = wa.replace(/\D/g, "");
@@ -584,10 +696,10 @@ function normalizeWa(wa: string | null): string {
   return d;
 }
 
-function InvoicePrint({ invoice, settings, customerWa, onClose }: { invoice: InvoiceDetail; settings: InvoiceSettings; customerWa: string | null; onClose: () => void }) {
+function InvoicePrint({ invoice, company, customerWa, onClose }: { invoice: InvoiceDetail; company: CompanyData; customerWa: string | null; onClose: () => void }) {
   function shareWa() {
     const lines: string[] = [
-      `*TAGIHAN ${settings.companyName}*`,
+      `*TAGIHAN ${company.companyName}*`,
       `No: #${invoice.invoiceNumber}`,
       `Kepada: ${invoice.customerName}`,
       `Tanggal: ${fmtTanggal(invoice.invoiceDate)}`,
@@ -600,9 +712,9 @@ function InvoicePrint({ invoice, settings, customerWa, onClose }: { invoice: Inv
       `Sudah dibayar: ${fmtRupiah(invoice.paidAmount)}`,
       `*Sisa tagihan: ${fmtRupiah(invoice.remaining)}*`,
       "",
-      settings.paymentNotes,
+      company.paymentNotes,
       "",
-      settings.footer,
+      company.footer,
     ];
     const text = encodeURIComponent(lines.join("\n"));
     const phone = normalizeWa(customerWa);
@@ -629,9 +741,9 @@ function InvoicePrint({ invoice, settings, customerWa, onClose }: { invoice: Inv
           {/* Header */}
           <div className="flex justify-between items-start">
             <div>
-              <div className="font-bold text-base">{settings.companyName}</div>
-              <img src={settings.logoUrl || logoJaseo} alt={settings.companyName} className="h-20 w-auto object-contain mt-2" />
-              <div className="text-[11px] text-gray-700 mt-1 max-w-[220px] leading-snug">{OFFICE_ADDRESS}</div>
+              <div className="font-bold text-base">{company.companyName}</div>
+              <img src={company.logoUrl || logoJaseo} alt={company.companyName} className="h-20 w-auto object-contain mt-2" />
+              <div className="text-[11px] text-gray-700 mt-1 max-w-[220px] leading-snug whitespace-pre-line">{company.address}</div>
             </div>
             <div className="text-right">
               <div className="text-2xl font-bold tracking-wide">TAGIHAN</div>
@@ -696,11 +808,11 @@ function InvoicePrint({ invoice, settings, customerWa, onClose }: { invoice: Inv
           {/* Payment notes */}
           <div className="mt-6 border border-gray-400 rounded p-3 text-[11px] whitespace-pre-line">
             <div className="font-semibold mb-1">CATATAN PEMBAYARAN :</div>
-            {settings.paymentNotes}
+            {company.paymentNotes}
           </div>
 
           {/* Footer */}
-          <div className="mt-4 text-[11px] whitespace-pre-line">{settings.footer}</div>
+          <div className="mt-4 text-[11px] whitespace-pre-line">{company.footer}</div>
 
           {invoice.notes && <div className="mt-3 text-[11px] italic">Catatan: {invoice.notes}</div>}
         </div>

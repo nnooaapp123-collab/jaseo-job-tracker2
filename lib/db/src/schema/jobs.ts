@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, boolean, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -258,6 +258,15 @@ export type InsertSalaryTransfer = z.infer<typeof insertSalaryTransferSchema>;
 export type SalaryTransfer = typeof salaryTransfersTable.$inferSelect;
 
 // ─── Invoice / Tagihan ───────────────────────────────────────────────────────
+export type InvoiceCompanySnapshot = {
+  profileId: string;
+  companyName: string;
+  address: string;
+  logoUrl: string;
+  paymentNotes: string;
+  footer: string;
+};
+
 export const invoicesTable = pgTable("invoices", {
   id: serial("id").primaryKey(),
   invoiceNumber: text("invoice_number").notNull(),                   // e.g. "0906202620"
@@ -269,6 +278,7 @@ export const invoicesTable = pgTable("invoices", {
   tax: integer("tax").notNull().default(0),                          // pajak (input manual)
   paidAmount: integer("paid_amount").notNull().default(0),          // sudah dibayar
   notes: text("notes"),                                              // catatan tambahan
+  companySnapshot: jsonb("company_snapshot").$type<InvoiceCompanySnapshot>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex("invoices_invoice_number_idx").on(t.invoiceNumber)]);
 
